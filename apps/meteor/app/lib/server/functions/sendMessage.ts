@@ -3,6 +3,7 @@ import { api, Message } from '@rocket.chat/core-services';
 import type { IMessage, IRoom } from '@rocket.chat/core-typings';
 import { Messages } from '@rocket.chat/models';
 import { Match, check } from 'meteor/check';
+import { Meteor } from 'meteor/meteor';
 
 import { parseUrlsInMessage } from './parseUrlsInMessage';
 import { isRelativeURL } from '../../../../lib/utils/isRelativeURL';
@@ -13,6 +14,7 @@ import { settings } from '../../../settings/server';
 import { afterSaveMessage } from '../lib/afterSaveMessage';
 import { notifyOnRoomChangedById, notifyOnMessageChange } from '../lib/notifyListener';
 import { validateCustomMessageFields } from '../lib/validateCustomMessageFields';
+import { moderateMessage } from '../../../../server/messageModeration';
 
 // TODO: most of the types here are wrong, but I don't want to change them now
 
@@ -216,8 +218,14 @@ export function prepareMessageObject(
  * Validates and sends the message object.
  */
 export const sendMessage = async function (user: any, message: any, room: any, upsert = false, previewUrls?: string[]) {
-	if (!user || !message || !room._id) {
+	if (!user || !message || !room?._id) {
 		return false;
+	}
+
+	// First level moderation - Check if message contains sensitive information
+	const moderationResult = await moderateMessage(message.msg);
+	if (!moderationResult.allowed) {
+		throw new Meteor.Error('you-are-not-allowed-to-send-contacts', moderationResult.reason);
 	}
 
 	await validateMessage(message, room, user);
