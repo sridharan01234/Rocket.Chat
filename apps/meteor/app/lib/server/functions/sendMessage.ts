@@ -214,6 +214,18 @@ export function prepareMessageObject(
 	}
 }
 
+const violationCounts = new Map<string, number>();
+
+function incrementViolationCount(userId: string): number {
+	const newCount = (violationCounts.get(userId) || 0) + 1;
+	violationCounts.set(userId, newCount);
+	return newCount;
+}
+
+function isUserBlocked(userId: string): boolean {
+	return (violationCounts.get(userId) || 0) >= 3;
+}
+
 /**
  * Validates and sends the message object.
  */
@@ -222,10 +234,20 @@ export const sendMessage = async function (user: any, message: any, room: any, u
 		return false;
 	}
 
+	const userId = user._id;
+
+	if (isUserBlocked(userId)) {
+		throw new Meteor.Error('error-user-blocked', 'You have been blocked due to repeated moderation violations.');
+	}
+
 	// First level moderation - Check if message contains sensitive information
 	const moderationResult = await moderateMessage(message.msg);
 	if (!moderationResult.allowed) {
-		throw new Meteor.Error('you-are-not-allowed-to-send-contacts', moderationResult.reason);
+		const count = incrementViolationCount(userId);
+		if (count >= 3) {
+			throw new Meteor.Error('error-user-blocked', 'You have been blocked due to repeated moderation violations.');
+		}
+		throw new Meteor.Error('error-message-blocked', moderationResult.reason);
 	}
 
 	await validateMessage(message, room, user);
